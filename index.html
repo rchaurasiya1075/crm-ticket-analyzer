@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CRM Ticket Analyzer | Excel-like Dashboard</title>
+  <title>CRM Ticket Analyzer v2 | Celerity / HCI Escalation</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     body { font-family: 'Segoe UI', system-ui, sans-serif; }
-    .table-container { max-height: 480px; overflow: auto; }
-    table th { position: sticky; top: 0; z-index: 10; }
-    .mail-box { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; }
-    .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+    .table-container { max-height: 520px; overflow: auto; }
+    table th { position: sticky; top: 0; z-index: 10; background: #f1f5f9; }
+    .mail-box { white-space: pre-wrap; font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; line-height: 1.45; }
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
     .open { background: #fef3c7; color: #92400e; }
     .resolved { background: #d1fae5; color: #065f46; }
     .hold { background: #fee2e2; color: #991b1b; }
@@ -19,272 +19,294 @@
     .high { background: #fed7aa; color: #9a3412; }
     .medium { background: #fef08a; color: #854d0e; }
     .low { background: #bbf7d0; color: #166534; }
+    .isp-celerity { background: #dbeafe; color: #1e40af; }
+    .isp-hci { background: #fce7f3; color: #9d174d; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
   <div class="min-h-screen">
-    <!-- Header -->
     <header class="bg-blue-700 text-white shadow-lg">
       <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold">CRM Ticket Analyzer</h1>
-          <p class="text-blue-100 text-sm">Excel-like paste → Auto Analysis + Escalation Mails</p>
+          <h1 class="text-2xl font-bold">CRM Ticket Analyzer <span class="text-blue-200 text-lg">v2</span></h1>
+          <p class="text-blue-100 text-sm">Celerity / HCI Escalation Mail Generator + Analysis</p>
         </div>
-        <div class="flex gap-2 text-sm">
+        <div class="flex flex-wrap gap-2 text-sm">
           <span id="ticketCount" class="bg-blue-600 px-3 py-1 rounded-full">0 tickets</span>
           <span id="openCount" class="bg-amber-500 px-3 py-1 rounded-full">0 open</span>
+          <span id="celerityCount" class="bg-sky-500 px-3 py-1 rounded-full">0 Celerity</span>
+          <span id="hciCount" class="bg-pink-500 px-3 py-1 rounded-full">0 HCI</span>
         </div>
       </div>
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-      <!-- PASTE / UPLOAD SECTION -->
+      <!-- 1. IMPORT -->
       <section class="bg-white rounded-xl shadow p-5">
         <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
-          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">1</span>
-          Data Import (Excel se copy-paste ya file upload)
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+          Data Import (Open / Resolve / Overall Excel)
         </h2>
         <div class="grid md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium mb-1">Excel se select karke Ctrl+C → yahan Ctrl+V</label>
-            <textarea id="pasteArea" rows="6" class="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Yahan Excel data paste karo (headers + rows)...&#10;&#10;Owner	Assign to FE Time-Active	Last Enclosure Comment...&#10;ONEOTT - FE...	2026-08-22 11:06:34	Assign to FE..."></textarea>
-            <div class="mt-2 flex gap-2">
+            <label class="block text-sm font-medium mb-1">Excel se select → Ctrl+C → yahan Ctrl+V (headers ke saath)</label>
+            <textarea id="pasteArea" rows="7" class="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono" placeholder="Incident ID	Site Code	State	Submitted Time	CurrentStatus	Owner	Remarks	...&#10;IN200826-0003335	XTNCHG368	Chandigarh	20 Aug, 2026...	Assign to FE	Celerity	we have escalated..."></textarea>
+            <div class="mt-2 flex flex-wrap gap-2">
               <button onclick="parsePaste()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Parse Pasted Data</button>
-              <button onclick="loadSample()" class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm">Load Sample Data</button>
               <button onclick="clearAll()" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">Clear</button>
             </div>
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Ya .xlsx / .csv file upload karo</label>
+            <label class="block text-sm font-medium mb-1">Ya .xlsx / .csv file upload</label>
             <div class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
               <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFile(event)" />
-              <button onclick="document.getElementById('fileInput').click()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-medium">Choose Excel/CSV File</button>
-              <p class="text-xs text-slate-500 mt-2">SheetJS se parse hoga. Pehli sheet use hogi.</p>
+              <button onclick="document.getElementById('fileInput').click()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-medium">Choose Excel / CSV</button>
+              <p class="text-xs text-slate-500 mt-2">Pehli sheet use hogi. Multiple files alag-alag paste/upload kar sakte ho.</p>
             </div>
-            <div id="parseStatus" class="mt-3 text-sm text-slate-600"></div>
+            <div id="parseStatus" class="mt-3 text-sm"></div>
+            <div class="mt-3 text-xs text-slate-500 bg-slate-50 rounded p-2">
+              <strong>Supported columns:</strong> Incident ID, Site Code, State, Submitted Time, CurrentStatus, Owner (Celerity/HCI), Remarks, Branch Person Name, Contact, Alternate Number, Down Time Aging, ETR
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- DASHBOARD SUMMARY -->
+      <!-- 2. DASHBOARD -->
       <section id="dashboard" class="bg-white rounded-xl shadow p-5 hidden">
         <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">2</span>
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">2</span>
           Dashboard & Analysis
         </h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="summaryCards"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6" id="summaryCards"></div>
 
-        <div class="grid md:grid-cols-2 gap-6">
+        <div class="grid md:grid-cols-3 gap-5">
           <div>
-            <h3 class="font-medium mb-2">Location / State wise Open Tickets</h3>
-            <div id="stateSummary" class="space-y-2 text-sm"></div>
+            <h3 class="font-medium mb-2 text-sm">Outage Reason / Category (Open)</h3>
+            <div id="reasonSummary" class="space-y-1.5 text-sm max-h-56 overflow-auto"></div>
           </div>
           <div>
-            <h3 class="font-medium mb-2">Category / Reason wise (Open)</h3>
-            <div id="categorySummary" class="space-y-2 text-sm"></div>
+            <h3 class="font-medium mb-2 text-sm">Location / State wise (Open)</h3>
+            <div id="stateSummary" class="space-y-1.5 text-sm max-h-56 overflow-auto"></div>
+          </div>
+          <div>
+            <h3 class="font-medium mb-2 text-sm">ISP / Owner wise</h3>
+            <div id="ownerSummary" class="space-y-1.5 text-sm max-h-56 overflow-auto"></div>
           </div>
         </div>
 
-        <div class="mt-6">
-          <h3 class="font-medium mb-2">Resolved Tickets Analysis</h3>
-          <div id="resolvedAnalysis" class="text-sm bg-slate-50 rounded-lg p-4"></div>
+        <div class="mt-5">
+          <h3 class="font-medium mb-2 text-sm">Resolved Analysis</h3>
+          <div id="resolvedAnalysis" class="text-sm bg-slate-50 rounded-lg p-3"></div>
         </div>
       </section>
 
-      <!-- FILTERS + TABLE -->
+      <!-- 3. TABLE -->
       <section id="tableSection" class="bg-white rounded-xl shadow p-5 hidden">
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h2 class="text-lg font-semibold flex items-center gap-2">
-            <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">3</span>
+            <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">3</span>
             Tickets Table
           </h2>
           <div class="flex flex-wrap gap-2">
-            <select id="filterStatus" onchange="renderTable()" class="border rounded-lg px-3 py-1.5 text-sm">
+            <select id="filterStatus" onchange="renderTable()" class="border rounded-lg px-2.5 py-1.5 text-sm">
               <option value="all">All Status</option>
-              <option value="open">Open only</option>
-              <option value="resolved">Resolved only</option>
-              <option value="hold">On Hold</option>
+              <option value="open">Open / Assign to FE</option>
+              <option value="resolved">Resolved</option>
             </select>
-            <select id="filterState" onchange="renderTable()" class="border rounded-lg px-3 py-1.5 text-sm">
+            <select id="filterOwner" onchange="renderTable()" class="border rounded-lg px-2.5 py-1.5 text-sm">
+              <option value="all">All ISP / Owner</option>
+              <option value="celerity">Celerity only</option>
+              <option value="hci">HCI only</option>
+            </select>
+            <select id="filterState" onchange="renderTable()" class="border rounded-lg px-2.5 py-1.5 text-sm">
               <option value="all">All States</option>
             </select>
-            <input type="text" id="searchBox" oninput="renderTable()" placeholder="Search site / caller / remark..." class="border rounded-lg px-3 py-1.5 text-sm w-56" />
+            <input type="text" id="searchBox" oninput="renderTable()" placeholder="Search Incident / Site / Remark..." class="border rounded-lg px-3 py-1.5 text-sm w-52" />
           </div>
         </div>
         <div class="table-container border rounded-lg">
-          <table class="min-w-full text-sm" id="dataTable">
-            <thead class="bg-slate-100"></thead>
+          <table class="min-w-full text-xs" id="dataTable">
+            <thead></thead>
             <tbody></tbody>
           </table>
         </div>
       </section>
 
-      <!-- ESCALATION MAILS -->
+      <!-- 4. ESCALATION MAILS (Celerity / HCI style) -->
       <section id="mailSection" class="bg-white rounded-xl shadow p-5 hidden">
-        <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
-          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">4</span>
-          Open Tickets – Escalation Mail Formats (Copy-Paste ready)
+        <h2 class="text-lg font-semibold mb-2 flex items-center gap-2">
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">4</span>
+          Escalation Mail Format (Celerity / HCI style)
         </h2>
-        <p class="text-sm text-slate-600 mb-4">Downtime ke hisab se severity set hoti hai. Har ticket ka individual mail + Combined mail dono available hain.</p>
-        
-        <div class="mb-4 flex gap-2">
-          <button onclick="generateMails()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Generate / Refresh Mails</button>
-          <button onclick="copyCombinedMail()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Copy Combined Escalation Mail</button>
+        <p class="text-sm text-slate-600 mb-4">Exact format jaisa aapka sample – Summary tables + Detailed tickets. Alag-alag ISP ke liye generate hota hai.</p>
+
+        <div class="flex flex-wrap gap-2 mb-4">
+          <button onclick="generateISPMail('Celerity')" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Generate Celerity Mail</button>
+          <button onclick="generateISPMail('HCI')" class="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Generate HCI Mail</button>
+          <button onclick="generateISPMail('ALL')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Generate Combined (All Open)</button>
         </div>
 
-        <div id="combinedMailBox" class="hidden mb-6">
-          <div class="flex justify-between items-center mb-1">
-            <span class="font-medium text-sm">Combined Escalation Mail (All Open)</span>
-            <button onclick="copyText('combinedMailContent')" class="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded">Copy</button>
+        <div id="ispMailBox" class="hidden">
+          <div class="flex justify-between items-center mb-2">
+            <span id="ispMailTitle" class="font-medium"></span>
+            <button onclick="copyIspMail()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded">Copy Full Mail</button>
           </div>
-          <div id="combinedMailContent" class="mail-box bg-slate-50 border rounded-lg p-4 max-h-64 overflow-auto"></div>
+          <div id="ispMailContent" class="mail-box bg-slate-50 border rounded-lg p-4 max-h-[70vh] overflow-auto"></div>
         </div>
-
-        <div id="individualMails" class="space-y-4"></div>
       </section>
 
-      <!-- FOOTER HELP -->
-      <section class="text-center text-sm text-slate-500 pb-8">
-        <p>Data browser me hi rehta hai – server pe nahi jata. GitHub Pages pe host safe hai.</p>
-        <p class="mt-1">Columns auto-detect: Owner, Assign/Open Time, Comment/Remark, State, Hold, Resolved/Close, Caller, etc.</p>
+      <section class="text-center text-xs text-slate-500 pb-8">
+        <p>Data sirf browser me rehta hai. GitHub Pages pe safe host.</p>
+        <p class="mt-1">One Site Code → multiple Incident IDs supported. Open / Resolve / Overall alag Excel paste kar sakte ho.</p>
       </section>
     </main>
   </div>
 
   <script>
-    // ========== GLOBAL STATE ==========
-    let rawData = [];      // array of objects
-    let headers = [];
-    let colMap = {};       // logical name → actual header
+    let rawData = [];
+    let colMap = {};
 
-    // Sample data from previous conversation
-    const SAMPLE_TSV = `Owner	Assign to FE Time-Active	Last Enclosure Comment(Active)	State	Call on Hold Time(Active)	SubmittedBy	Last Modified Time	Resolved Time-Active	Close Time(Active)	ETA	FF-ETA	Caller Name
-ONEOTT - FE Rollout Partner	2026-08-22 11:06:34	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061225	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:06	--	--	--	--	9068969829
-ONEOTT - FE Rollout Partner	2026-08-22 11:06:02	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061223	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:06	--	--	--	--	8267097765
-ONEOTT - FE Rollout Partner	2026-08-22 11:04:14	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061224	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:04	--	--	--	--	8937057115
-ONEOTT - FE Rollout Partner	2026-08-22 11:03:03	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061217	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:03	--	--	--	--	7464830619
-ONEOTT - FE Rollout Partner	2026-08-22 11:01:40	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061214	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:01	--	--	--	--	9897933954
-HCIN - FE Rollout Partner	2026-08-21 12:33:55	Call on Hold_Enclosure :: Dear Customer, Link is up from our end and we are awaiting confirmation from the Hughes team.	Punjab	2026-08-21 17:07:09	XTRANET TECHNOLOGIES LIMITED	2026-08-21 17:07	--	--	2026-08-21 17:07	--	8699149299
-ONEOTT - FE Rollout Partner	2026-08-21 12:33:19	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-UDH-XX-XXX-HUGHES-0066084	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-21 12:33	--	--	--	--	8191899824
-ONEOTT - FE Rollout Partner	2026-08-21 12:05:55	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-RUD-XX-XXX-HUGHES-0061238	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-21 12:06	--	--	--	--	8954770707`;
-
-    // ========== HELPERS ==========
+    // ========== PARSERS ==========
     function parseDate(str) {
-      if (!str || str === '--' || str.trim() === '') return null;
-      // Try common formats
-      let d = new Date(str.replace(/(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})/, '$1T$2:$3:00'));
-      if (isNaN(d.getTime())) d = new Date(str);
+      if (!str || str === '--' || str.trim() === '' || str === '-') return null;
+      let s = str.replace(/ at /i, ' ').replace(/,/g, '');
+      let d = new Date(s);
+      if (isNaN(d.getTime())) {
+        d = new Date(str);
+      }
       return isNaN(d.getTime()) ? null : d;
     }
 
-    function hoursBetween(start, end) {
-      if (!start || !end) return null;
-      return (end - start) / (1000 * 60 * 60);
+    function parseAging(str) {
+      if (!str || str === '--' || str.trim() === '') return null;
+      let days = 0, hours = 0, mins = 0;
+      const dMatch = str.match(/(\d+)\s*D/i);
+      const hMatch = str.match(/(\d+)\s*H/i);
+      const mMatch = str.match(/(\d+)\s*M/i);
+      if (dMatch) days = parseInt(dMatch[1]);
+      if (hMatch) hours = parseInt(hMatch[1]);
+      if (mMatch) mins = parseInt(mMatch[1]);
+      return days * 24 + hours + mins / 60;
     }
 
-    function formatDuration(hours) {
+    function formatAging(hours) {
       if (hours === null || isNaN(hours)) return 'N/A';
-      if (hours < 1) return Math.round(hours * 60) + ' mins';
-      const h = Math.floor(hours);
-      const m = Math.round((hours - h) * 60);
-      return h + 'h ' + m + 'm';
+      const d = Math.floor(hours / 24);
+      const h = Math.floor(hours % 24);
+      const m = Math.round((hours % 1) * 60);
+      if (d > 0) return `${d}D ${h}H ${m}M`;
+      return `${String(h).padStart(2,'0')} ${h}H ${String(m).padStart(2,'0')}M`;
     }
 
     function detectColumns(hdrs) {
-      const map = {};
       const lower = hdrs.map(h => (h || '').toLowerCase().trim());
       const find = (...keys) => {
-        for (let k of keys) {
+        for (const k of keys) {
           const i = lower.findIndex(h => h.includes(k));
           if (i >= 0) return hdrs[i];
         }
         return null;
       };
-      map.owner = find('owner');
-      map.assign = find('assign to fe', 'assign', 'open time', 'created', 'submit time');
-      map.comment = find('enclosure comment', 'comment', 'remark', 'last enclosure', 'description');
-      map.state = find('state', 'location', 'region');
-      map.hold = find('hold time', 'call on hold');
-      map.submitted = find('submittedby', 'submitted by', 'created by');
-      map.modified = find('last modified', 'modified');
-      map.resolved = find('resolved time', 'resolved');
-      map.close = find('close time', 'closed');
-      map.eta = find('eta');
-      map.caller = find('caller', 'mobile', 'phone', 'contact');
-      map.ckt = null; // will extract from comment
-      return map;
+      return {
+        incident: find('incident id', 'incidentid', 'ticket id', 'ticketid'),
+        site: find('site code', 'sitecode', 'site id', 'ckt'),
+        state: find('state', 'location', 'region'),
+        submitted: find('submitted time', 'submitted', 'open time', 'created', 'assign to fe time'),
+        status: find('currentstatus', 'current status', 'status'),
+        owner: find('owner', 'isp', 'partner'),
+        remarks: find('remarks', 'remark', 'comment', 'enclosure', 'description'),
+        branchName: find('branch person name', 'branch person', 'person name', 'fe name'),
+        branchContact: find('branch person contact', 'contact number', 'contact'),
+        alternate: find('alternate number', 'alternate'),
+        aging: find('down time aging', 'downtime aging', 'aging', 'down time'),
+        etr: find('etr', 'eta'),
+        assign: find('assign to fe time-active', 'assign to fe'),
+        caller: find('caller name', 'caller'),
+      };
     }
 
-    function extractCKT(comment) {
-      if (!comment) return 'N/A';
-      const m = comment.match(/CKT\s*ID\s*[:\s]*([A-Z0-9\-]+)/i) || comment.match(/(ENT-[A-Z0-9\-]+)/i);
-      return m ? m[1] : 'N/A';
+    function extractCKT(text) {
+      if (!text) return '';
+      const m = text.match(/CKT\s*ID\s*[:\s]*([A-Z0-9\-]+)/i) || text.match(/(ENT-[A-Z0-9\-]+)/i) || text.match(/(XTN[A-Z0-9]+)/i);
+      return m ? m[1] : '';
     }
 
-    function categorize(comment) {
-      if (!comment) return 'Unknown';
-      const c = comment.toLowerCase();
-      if (c.includes('awaiting confirmation') || c.includes('awaiting') && c.includes('hughes')) return 'Awaiting Hughes / Customer Confirmation';
-      if (c.includes('link is up')) return 'Link Up – Pending Confirmation';
-      if (c.includes('assign to fe') || c.includes('assign to fe_enclosure')) return 'Pending FE Assignment / Rollout';
-      if (c.includes('call on hold')) return 'On Hold – Awaiting Action';
-      if (c.includes('power') || c.includes('electricity')) return 'Power Issue';
-      if (c.includes('fiber') || c.includes('cable cut') || c.includes('ofc')) return 'Fiber / Cable Issue';
-      if (c.includes('equipment') || c.includes('hardware') || c.includes('modem') || c.includes('router')) return 'Equipment Fault';
+    function categorize(remark, status) {
+      if (!remark) return status || 'Unknown';
+      const c = remark.toLowerCase();
+      if (c.includes('fiber cut') || c.includes('backend issue') || c.includes('network outage') || c.includes('rain fall')) return 'FIBER CUT / BACKEND ISSUE / NETWORK OUTAGE / RAIN FALL';
+      if (c.includes('team is checking') || c.includes('team checking')) return 'TEAM IS CHECKING';
+      if (c.includes('link up confirmation') || c.includes('link is up') || c.includes('awaiting confirmation')) return 'Link up confirmation pending';
+      if (c.includes('isp rechecking') || c.includes('pending updates')) return 'ISP RECHECKING PENDING UPDATES';
+      if (c.includes('link migration')) return 'LINK MIGRATION';
+      if (c.includes('modem faulty') || c.includes('modem')) return 'MODEM FAULTY';
+      if (c.includes('fe will visit') || c.includes('visit at site')) return 'FE will visit at site';
+      if (c.includes('vendor change') || c.includes('noc is received') || c.includes('customer\'s noc')) return 'Vendor change / NOC pending';
+      if (c.includes('assign to fe') || c.includes('escalated your case')) return 'Assign to FE / Escalated';
+      if (c.includes('link is down') || c.includes('link showing down')) return 'Link Down';
       return 'Other / Manual Review';
     }
 
+    function normalizeOwner(o) {
+      if (!o) return 'Unknown';
+      const s = o.toLowerCase();
+      if (s.includes('celerity')) return 'Celerity';
+      if (s.includes('hci') || s.includes('hcin') || s.includes('oneott')) return 'HCI';
+      return o;
+    }
+
     function getStatus(row) {
-      const resolved = (row._resolved || row._close || '').toString().trim();
-      const hold = (row._hold || '').toString().trim();
-      if (resolved && resolved !== '--') return 'resolved';
-      if (hold && hold !== '--') return 'hold';
+      const st = (row._statusRaw || '').toLowerCase();
+      if (st.includes('resolve') || st.includes('closed') || st.includes('close')) return 'resolved';
+      if (st.includes('hold')) return 'hold';
       return 'open';
     }
 
-    function getSeverity(hours) {
-      if (hours === null) return { level: 'Unknown', cls: 'low' };
-      if (hours >= 24) return { level: 'Critical (>24h)', cls: 'critical' };
-      if (hours >= 8)  return { level: 'High (8-24h)', cls: 'high' };
-      if (hours >= 4)  return { level: 'Medium (4-8h)', cls: 'medium' };
-      return { level: 'Low (<4h)', cls: 'low' };
+    function getSeverityFromHours(hrs) {
+      if (hrs === null) return { level: 'Unknown', cls: 'low' };
+      if (hrs >= 24) return { level: 'Critical', cls: 'critical' };
+      if (hrs >= 8) return { level: 'High', cls: 'high' };
+      if (hrs >= 4) return { level: 'Medium', cls: 'medium' };
+      return { level: 'Low', cls: 'low' };
     }
 
-    // ========== PARSE ==========
+    // ========== PROCESS ==========
     function processRows(hdrs, rows) {
-      headers = hdrs;
       colMap = detectColumns(hdrs);
       rawData = rows.map((r, idx) => {
         const obj = {};
-        hdrs.forEach((h, i) => obj[h] = (r[i] || '').toString().trim());
-        // normalized helpers
-        obj._owner = obj[colMap.owner] || '';
-        obj._assign = obj[colMap.assign] || '';
-        obj._comment = obj[colMap.comment] || '';
+        hdrs.forEach((h, i) => obj[h] = (r[i] !== undefined && r[i] !== null) ? String(r[i]).trim() : '');
+        
+        obj._incident = obj[colMap.incident] || '';
+        obj._site = obj[colMap.site] || extractCKT(obj[colMap.remarks] || '') || '';
         obj._state = obj[colMap.state] || '';
-        obj._hold = obj[colMap.hold] || '';
-        obj._resolved = obj[colMap.resolved] || '';
-        obj._close = obj[colMap.close] || '';
+        obj._submitted = obj[colMap.submitted] || obj[colMap.assign] || '';
+        obj._statusRaw = obj[colMap.status] || '';
+        obj._ownerRaw = obj[colMap.owner] || '';
+        obj._owner = normalizeOwner(obj._ownerRaw);
+        obj._remarks = obj[colMap.remarks] || '';
+        obj._branchName = obj[colMap.branchName] || '';
+        obj._branchContact = obj[colMap.branchContact] || '';
+        obj._alternate = obj[colMap.alternate] || '';
+        obj._agingRaw = obj[colMap.aging] || '';
+        obj._etr = obj[colMap.etr] || '';
         obj._caller = obj[colMap.caller] || '';
-        obj._ckt = extractCKT(obj._comment);
-        obj._category = categorize(obj._comment);
+
         obj._status = getStatus(obj);
-        obj._openDate = parseDate(obj._assign) || parseDate(obj[colMap.modified]);
-        obj._closeDate = parseDate(obj._resolved) || parseDate(obj._close);
-        obj._holdDate = parseDate(obj._hold);
-        // downtime for open
-        const now = new Date();
-        if (obj._status !== 'resolved' && obj._openDate) {
-          obj._downtimeHrs = hoursBetween(obj._openDate, now);
-        } else if (obj._status === 'resolved' && obj._openDate && obj._closeDate) {
-          obj._downtimeHrs = hoursBetween(obj._openDate, obj._closeDate);
-        } else {
-          obj._downtimeHrs = null;
+        obj._category = categorize(obj._remarks, obj._statusRaw);
+        obj._agingHrs = parseAging(obj._agingRaw);
+        
+        if (obj._agingHrs === null && obj._submitted) {
+          const openD = parseDate(obj._submitted);
+          if (openD) {
+            obj._agingHrs = (new Date() - openD) / (1000 * 60 * 60);
+          }
         }
         obj._id = idx;
         return obj;
-      });
+      }).filter(r => r._incident || r._site || r._remarks);
+
       updateUI();
     }
 
@@ -293,10 +315,11 @@ ONEOTT - FE Rollout Partner	2026-08-21 12:05:55	Assign to FE_Enclosure :: CKT ID
       if (!text) { alert('Pehle data paste karo'); return; }
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (lines.length < 2) { alert('Header + kam se kam 1 row chahiye'); return; }
-      const hdrs = lines[0].split('\t').map(h => h.trim());
-      const rows = lines.slice(1).map(l => l.split('\t'));
+      const delim = lines[0].includes('\t') ? '\t' : (lines[0].includes(',') ? ',' : '\t');
+      const hdrs = lines[0].split(delim).map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows = lines.slice(1).map(l => l.split(delim).map(c => c.trim().replace(/^"|"$/g, '')));
       processRows(hdrs, rows);
-      document.getElementById('parseStatus').innerHTML = `<span class="text-green-600">✓ ${rawData.length} tickets loaded from paste</span>`;
+      document.getElementById('parseStatus').innerHTML = `<span class="text-green-600 font-medium">✓ ${rawData.length} tickets loaded</span>`;
     }
 
     function handleFile(e) {
@@ -306,297 +329,246 @@ ONEOTT - FE Rollout Partner	2026-08-21 12:05:55	Assign to FE_Enclosure :: CKT ID
       reader.onload = function(evt) {
         try {
           const data = new Uint8Array(evt.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-          const json = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
-          if (json.length < 2) { alert('Empty or invalid file'); return; }
-          const hdrs = json[0].map(h => (h || '').toString().trim());
+          const wb = XLSX.read(data, { type: 'array', cellDates: true });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+          if (json.length < 2) { alert('Empty file'); return; }
+          const hdrs = json[0].map(h => String(h || '').trim());
           const rows = json.slice(1);
           processRows(hdrs, rows);
-          document.getElementById('parseStatus').innerHTML = `<span class="text-green-600">✓ ${rawData.length} tickets loaded from file: ${file.name}</span>`;
+          document.getElementById('parseStatus').innerHTML = `<span class="text-green-600 font-medium">✓ ${rawData.length} tickets from ${file.name}</span>`;
         } catch (err) {
-          alert('File parse error: ' + err.message);
+          alert('Parse error: ' + err.message);
         }
       };
       reader.readAsArrayBuffer(file);
-    }
-
-    function loadSample() {
-      document.getElementById('pasteArea').value = SAMPLE_TSV;
-      parsePaste();
     }
 
     function clearAll() {
       rawData = [];
       document.getElementById('pasteArea').value = '';
       document.getElementById('parseStatus').innerHTML = '';
-      document.getElementById('dashboard').classList.add('hidden');
-      document.getElementById('tableSection').classList.add('hidden');
-      document.getElementById('mailSection').classList.add('hidden');
+      ['dashboard','tableSection','mailSection'].forEach(id => document.getElementById(id).classList.add('hidden'));
       document.getElementById('ticketCount').textContent = '0 tickets';
       document.getElementById('openCount').textContent = '0 open';
+      document.getElementById('celerityCount').textContent = '0 Celerity';
+      document.getElementById('hciCount').textContent = '0 HCI';
+      document.getElementById('ispMailBox').classList.add('hidden');
     }
 
-    // ========== UI UPDATE ==========
+    // ========== UI ==========
     function updateUI() {
       const open = rawData.filter(r => r._status !== 'resolved');
+      const cel = rawData.filter(r => r._owner === 'Celerity');
+      const hci = rawData.filter(r => r._owner === 'HCI');
+
       document.getElementById('ticketCount').textContent = rawData.length + ' tickets';
       document.getElementById('openCount').textContent = open.length + ' open';
+      document.getElementById('celerityCount').textContent = cel.length + ' Celerity';
+      document.getElementById('hciCount').textContent = hci.length + ' HCI';
 
-      // show sections
       document.getElementById('dashboard').classList.remove('hidden');
       document.getElementById('tableSection').classList.remove('hidden');
       document.getElementById('mailSection').classList.remove('hidden');
 
-      // populate state filter
       const states = [...new Set(rawData.map(r => r._state).filter(Boolean))].sort();
       const sel = document.getElementById('filterState');
       sel.innerHTML = '<option value="all">All States</option>' + states.map(s => `<option value="${s}">${s}</option>`).join('');
 
       renderSummary();
       renderTable();
-      generateMails();
     }
 
     function renderSummary() {
       const open = rawData.filter(r => r._status !== 'resolved');
       const resolved = rawData.filter(r => r._status === 'resolved');
-      const hold = rawData.filter(r => r._status === 'hold');
 
-      // cards
-      const totalDT = open.reduce((s, r) => s + (r._downtimeHrs || 0), 0);
+      const totalAging = open.reduce((s, r) => s + (r._agingHrs || 0), 0);
       const cards = [
-        { label: 'Total Tickets', value: rawData.length, color: 'bg-blue-50 text-blue-800' },
-        { label: 'Open / Active', value: open.length, color: 'bg-amber-50 text-amber-800' },
-        { label: 'On Hold', value: hold.length, color: 'bg-red-50 text-red-800' },
+        { label: 'Total', value: rawData.length, color: 'bg-blue-50 text-blue-800' },
+        { label: 'Open', value: open.length, color: 'bg-amber-50 text-amber-800' },
         { label: 'Resolved', value: resolved.length, color: 'bg-emerald-50 text-emerald-800' },
-        { label: 'Open Downtime (hrs)', value: totalDT.toFixed(1), color: 'bg-purple-50 text-purple-800' },
-        { label: 'Avg Open DT', value: open.length ? (totalDT / open.length).toFixed(1) + 'h' : '0', color: 'bg-indigo-50 text-indigo-800' },
+        { label: 'Celerity', value: rawData.filter(r => r._owner === 'Celerity').length, color: 'bg-sky-50 text-sky-800' },
+        { label: 'HCI', value: rawData.filter(r => r._owner === 'HCI').length, color: 'bg-pink-50 text-pink-800' },
+        { label: 'Open Aging (hrs)', value: totalAging.toFixed(0), color: 'bg-purple-50 text-purple-800' },
       ];
       document.getElementById('summaryCards').innerHTML = cards.map(c => `
-        <div class="${c.color} rounded-xl p-4 text-center">
-          <div class="text-2xl font-bold">${c.value}</div>
-          <div class="text-xs mt-1">${c.label}</div>
+        <div class="${c.color} rounded-xl p-3 text-center">
+          <div class="text-xl font-bold">${c.value}</div>
+          <div class="text-xs mt-0.5">${c.label}</div>
         </div>`).join('');
 
-      // state wise open
+      const reasonMap = {};
+      open.forEach(r => { reasonMap[r._category] = (reasonMap[r._category] || 0) + 1; });
+      document.getElementById('reasonSummary').innerHTML = Object.entries(reasonMap)
+        .sort((a,b) => b[1]-a[1])
+        .map(([k,v]) => `<div class="flex justify-between bg-slate-50 rounded px-2.5 py-1.5"><span class="truncate pr-2">${k}</span><span class="font-semibold">${v}</span></div>`).join('') || '<p class="text-slate-400">No open</p>';
+
       const stateMap = {};
       open.forEach(r => {
         const s = r._state || 'Unknown';
         if (!stateMap[s]) stateMap[s] = { count: 0, hrs: 0 };
         stateMap[s].count++;
-        stateMap[s].hrs += (r._downtimeHrs || 0);
+        stateMap[s].hrs += (r._agingHrs || 0);
       });
       document.getElementById('stateSummary').innerHTML = Object.entries(stateMap)
-        .sort((a,b) => b[1].hrs - a[1].hrs)
-        .map(([st, v]) => `
-          <div class="flex justify-between items-center bg-slate-50 rounded px-3 py-2">
-            <span class="font-medium">${st}</span>
-            <span>${v.count} open • ${v.hrs.toFixed(1)} hrs total</span>
-          </div>`).join('') || '<p class="text-slate-500">No open tickets</p>';
+        .sort((a,b) => b[1].count - a[1].count)
+        .map(([st, v]) => `<div class="flex justify-between bg-slate-50 rounded px-2.5 py-1.5"><span>${st}</span><span>${v.count} • ${v.hrs.toFixed(0)}h</span></div>`).join('') || '<p class="text-slate-400">No open</p>';
 
-      // category wise
-      const catMap = {};
-      open.forEach(r => {
-        const c = r._category;
-        if (!catMap[c]) catMap[c] = 0;
-        catMap[c]++;
-      });
-      document.getElementById('categorySummary').innerHTML = Object.entries(catMap)
-        .sort((a,b) => b[1] - a[1])
-        .map(([cat, cnt]) => `
-          <div class="flex justify-between items-center bg-slate-50 rounded px-3 py-2">
-            <span>${cat}</span>
-            <span class="font-semibold">${cnt}</span>
-          </div>`).join('') || '<p class="text-slate-500">No open tickets</p>';
+      const ownerMap = {};
+      rawData.forEach(r => { ownerMap[r._owner] = (ownerMap[r._owner] || 0) + 1; });
+      document.getElementById('ownerSummary').innerHTML = Object.entries(ownerMap)
+        .map(([o, c]) => `<div class="flex justify-between bg-slate-50 rounded px-2.5 py-1.5"><span>${o}</span><span class="font-semibold">${c}</span></div>`).join('');
 
-      // resolved analysis
       if (resolved.length === 0) {
-        document.getElementById('resolvedAnalysis').innerHTML = '<p class="text-slate-500">Abhi koi resolved ticket nahi hai is data me. Closed tickets paste karoge to average resolution time, reason breakdown etc. dikhega.</p>';
+        document.getElementById('resolvedAnalysis').innerHTML = '<span class="text-slate-500">Resolved tickets is data me nahi hain. Resolve Excel alag se paste/upload karo.</span>';
       } else {
-        const resHrs = resolved.map(r => r._downtimeHrs).filter(h => h !== null);
-        const avg = resHrs.length ? (resHrs.reduce((a,b)=>a+b,0) / resHrs.length) : 0;
-        const max = resHrs.length ? Math.max(...resHrs) : 0;
-        document.getElementById('resolvedAnalysis').innerHTML = `
-          <p><strong>${resolved.length}</strong> resolved tickets</p>
-          <p>Average resolution time: <strong>${formatDuration(avg)}</strong></p>
-          <p>Longest resolution: <strong>${formatDuration(max)}</strong></p>
-          <p class="mt-2 text-xs text-slate-500">Note: Resolution time = Close/Resolved − Assign/Open time</p>`;
+        document.getElementById('resolvedAnalysis').innerHTML = `<strong>${resolved.length}</strong> resolved tickets loaded.`;
       }
     }
 
     function renderTable() {
       const statusF = document.getElementById('filterStatus').value;
+      const ownerF = document.getElementById('filterOwner').value;
       const stateF = document.getElementById('filterState').value;
       const search = document.getElementById('searchBox').value.toLowerCase();
 
-      let filtered = rawData.filter(r => {
+      let list = rawData.filter(r => {
         if (statusF === 'open' && r._status === 'resolved') return false;
         if (statusF === 'resolved' && r._status !== 'resolved') return false;
-        if (statusF === 'hold' && r._status !== 'hold') return false;
+        if (ownerF === 'celerity' && r._owner !== 'Celerity') return false;
+        if (ownerF === 'hci' && r._owner !== 'HCI') return false;
         if (stateF !== 'all' && r._state !== stateF) return false;
         if (search) {
-          const blob = (r._ckt + ' ' + r._comment + ' ' + r._caller + ' ' + r._owner + ' ' + r._state).toLowerCase();
+          const blob = (r._incident + ' ' + r._site + ' ' + r._remarks + ' ' + r._branchName + ' ' + r._state).toLowerCase();
           if (!blob.includes(search)) return false;
         }
         return true;
       });
 
-      // sort open first by downtime desc
-      filtered.sort((a, b) => {
-        if (a._status === 'resolved' && b._status !== 'resolved') return 1;
-        if (b._status === 'resolved' && a._status !== 'resolved') return -1;
-        return (b._downtimeHrs || 0) - (a._downtimeHrs || 0);
-      });
+      list.sort((a, b) => (b._agingHrs || 0) - (a._agingHrs || 0));
 
       const thead = document.querySelector('#dataTable thead');
       const tbody = document.querySelector('#dataTable tbody');
-
-      thead.innerHTML = `<tr class="text-left">
-        <th class="px-3 py-2 border-b">Status</th>
-        <th class="px-3 py-2 border-b">CKT / Site</th>
-        <th class="px-3 py-2 border-b">State</th>
-        <th class="px-3 py-2 border-b">Downtime</th>
-        <th class="px-3 py-2 border-b">Severity</th>
-        <th class="px-3 py-2 border-b">Category</th>
-        <th class="px-3 py-2 border-b">Owner</th>
-        <th class="px-3 py-2 border-b">Caller</th>
-        <th class="px-3 py-2 border-b">Remark (short)</th>
+      thead.innerHTML = `<tr class="text-left text-xs">
+        <th class="px-2 py-2 border-b">Incident ID</th>
+        <th class="px-2 py-2 border-b">Site Code</th>
+        <th class="px-2 py-2 border-b">State</th>
+        <th class="px-2 py-2 border-b">Status</th>
+        <th class="px-2 py-2 border-b">Owner</th>
+        <th class="px-2 py-2 border-b">Aging</th>
+        <th class="px-2 py-2 border-b">Category</th>
+        <th class="px-2 py-2 border-b">Branch Person</th>
+        <th class="px-2 py-2 border-b">Contact</th>
+        <th class="px-2 py-2 border-b">ETR</th>
       </tr>`;
 
-      tbody.innerHTML = filtered.map(r => {
-        const sev = getSeverity(r._downtimeHrs);
-        const statusCls = r._status === 'resolved' ? 'resolved' : (r._status === 'hold' ? 'hold' : 'open');
-        const shortRemark = (r._comment || '').substring(0, 80) + ((r._comment || '').length > 80 ? '...' : '');
+      tbody.innerHTML = list.map(r => {
+        const ownCls = r._owner === 'Celerity' ? 'isp-celerity' : (r._owner === 'HCI' ? 'isp-hci' : 'low');
         return `<tr class="hover:bg-slate-50 border-b">
-          <td class="px-3 py-2"><span class="badge ${statusCls}">${r._status}</span></td>
-          <td class="px-3 py-2 font-mono text-xs">${r._ckt}</td>
-          <td class="px-3 py-2">${r._state || '-'}</td>
-          <td class="px-3 py-2 font-medium">${formatDuration(r._downtimeHrs)}</td>
-          <td class="px-3 py-2"><span class="badge ${sev.cls}">${sev.level}</span></td>
-          <td class="px-3 py-2 text-xs">${r._category}</td>
-          <td class="px-3 py-2 text-xs">${(r._owner || '').substring(0, 25)}</td>
-          <td class="px-3 py-2">${r._caller || '-'}</td>
-          <td class="px-3 py-2 text-xs text-slate-600" title="${r._comment}">${shortRemark}</td>
+          <td class="px-2 py-1.5 font-mono">${r._incident || '-'}</td>
+          <td class="px-2 py-1.5 font-mono text-xs">${r._site || '-'}</td>
+          <td class="px-2 py-1.5">${r._state || '-'}</td>
+          <td class="px-2 py-1.5"><span class="badge ${r._status === 'resolved' ? 'resolved' : 'open'}">${r._statusRaw || r._status}</span></td>
+          <td class="px-2 py-1.5"><span class="badge ${ownCls}">${r._owner}</span></td>
+          <td class="px-2 py-1.5 font-medium">${r._agingRaw || formatAging(r._agingHrs)}</td>
+          <td class="px-2 py-1.5 text-xs max-w-[160px] truncate" title="${r._category}">${r._category}</td>
+          <td class="px-2 py-1.5 text-xs">${r._branchName || '-'}</td>
+          <td class="px-2 py-1.5 text-xs">${r._branchContact || '-'}</td>
+          <td class="px-2 py-1.5 text-xs">${r._etr || '-'}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-500">No matching tickets</td></tr>';
+      }).join('') || '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400">No matching tickets</td></tr>';
     }
 
-    // ========== MAILS ==========
-    function buildSingleMail(r) {
-      const sev = getSeverity(r._downtimeHrs);
-      const dt = formatDuration(r._downtimeHrs);
-      const subject = `ESCALATION | ${r._ckt} | ${r._state || 'N/A'} | Downtime ${dt} | ${sev.level}`;
-      const body = `Dear Team,
+    // ========== MAIL GENERATOR ==========
+    function generateISPMail(isp) {
+      let tickets = rawData.filter(r => r._status !== 'resolved');
+      if (isp === 'Celerity') tickets = tickets.filter(r => r._owner === 'Celerity');
+      else if (isp === 'HCI') tickets = tickets.filter(r => r._owner === 'HCI');
 
-Please find below open ticket requiring your immediate attention / prioritization:
+      tickets.sort((a, b) => (b._agingHrs || 0) - (a._agingHrs || 0));
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Site / CKT ID     : ${r._ckt}
-Location / State  : ${r._state || 'N/A'}
-Current Status    : ${r._status.toUpperCase()}
-Downtime so far   : ${dt}
-Severity          : ${sev.level}
-Category / Reason : ${r._category}
-Owner / Partner   : ${r._owner || 'N/A'}
-Caller Number     : ${r._caller || 'N/A'}
-Assign / Open Time: ${r._assign || 'N/A'}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Latest Remark:
-${r._comment || 'No remark available'}
-
-Action Required:
-- Kindly check current status of the link / work.
-- Update the ticket with latest progress.
-- If pending on Hughes / Customer / FE, please escalate internally as needed.
-
-Thanks & Regards
-NOC / Operations Team`;
-      return { subject, body, severity: sev, ticket: r };
-    }
-
-    function generateMails() {
-      const open = rawData.filter(r => r._status !== 'resolved')
-        .sort((a, b) => (b._downtimeHrs || 0) - (a._downtimeHrs || 0));
-
-      const container = document.getElementById('individualMails');
-      if (open.length === 0) {
-        container.innerHTML = '<p class="text-slate-500">Koi open ticket nahi hai.</p>';
-        document.getElementById('combinedMailBox').classList.add('hidden');
+      if (tickets.length === 0) {
+        alert(isp + ' ke liye koi open ticket nahi mila. Data check karo (Owner column me Celerity / HCI hona chahiye).');
         return;
       }
 
-      // Combined
-      let combined = `Subject: ESCALATION – ${open.length} Open Tickets | Total Open Downtime Review
+      const reasonMap = {};
+      tickets.forEach(r => { reasonMap[r._category] = (reasonMap[r._category] || 0) + 1; });
+      const reasonRows = Object.entries(reasonMap).sort((a,b) => b[1]-a[1]);
 
-Dear Team,
+      const locMap = {};
+      tickets.forEach(r => {
+        const s = r._state || 'Unknown';
+        locMap[s] = (locMap[s] || 0) + 1;
+      });
+      const locRows = Object.entries(locMap).sort((a,b) => b[1]-a[1]);
 
-Please find below summary of currently open tickets requiring attention (sorted by downtime):
+      const total = tickets.length;
+      const ispLabel = isp === 'ALL' ? 'ALL ISP' : isp;
+
+      let mail = `Dear Support,
+
+Please prioritize and resolve all High-aging and long-pending cases at the earliest. Also, ensure that the latest progress, revised ETR, outage reason, and resolution updates are updated in the MARS portal.
+
+Please find the attached list of pending cases for your reference.
 
 `;
-      open.forEach((r, i) => {
-        const sev = getSeverity(r._downtimeHrs);
-        combined += `${i + 1}. ${r._ckt} | ${r._state || 'N/A'} | ${formatDuration(r._downtimeHrs)} | ${sev.level}
-   Category: ${r._category}
-   Remark  : ${(r._comment || '').substring(0, 100)}...
-   Caller  : ${r._caller || 'N/A'}
-   Owner   : ${r._owner || 'N/A'}
 
-`;
+      mail += `OUTAGE REASON SUMMARY (${ispLabel})\n`;
+      mail += `${'Outage Reason'.padEnd(55)} | Count\n`;
+      mail += `${'-'.repeat(55)}-+------\n`;
+      reasonRows.forEach(([reason, cnt]) => {
+        mail += `${reason.substring(0,54).padEnd(55)} | ${String(cnt).padStart(4)}\n`;
       });
-      combined += `\nKindly prioritize Critical & High severity tickets first and update status.\n\nThanks & Regards\nNOC / Operations Team`;
+      mail += `${'TOTAL'.padEnd(55)} | ${String(total).padStart(4)}\n\n`;
 
-      document.getElementById('combinedMailContent').textContent = combined;
-      document.getElementById('combinedMailBox').classList.remove('hidden');
+      mail += `LOCATION SUMMARY (${ispLabel})\n`;
+      mail += `${'Location'.padEnd(25)} | Count\n`;
+      mail += `${'-'.repeat(25)}-+------\n`;
+      locRows.forEach(([loc, cnt]) => {
+        mail += `${loc.padEnd(25)} | ${String(cnt).padStart(4)}\n`;
+      });
+      mail += `${'TOTAL'.padEnd(25)} | ${String(total).padStart(4)}\n\n`;
 
-      // Individual
-      container.innerHTML = open.map((r, idx) => {
-        const m = buildSingleMail(r);
-        const id = 'mail-' + idx;
-        return `
-          <div class="border rounded-xl overflow-hidden">
-            <div class="bg-slate-100 px-4 py-2 flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <span class="badge ${m.severity.cls}">${m.severity.level}</span>
-                <span class="font-mono text-sm font-medium">${r._ckt}</span>
-                <span class="text-xs text-slate-500">${r._state} • ${formatDuration(r._downtimeHrs)}</span>
-              </div>
-              <button onclick="copyMail('${id}')" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Copy Mail</button>
-            </div>
-            <div class="p-4">
-              <div class="text-xs font-medium text-slate-500 mb-1">Subject:</div>
-              <div class="text-sm font-medium mb-3" id="${id}-subject">${m.subject}</div>
-              <div class="text-xs font-medium text-slate-500 mb-1">Body:</div>
-              <pre id="${id}-body" class="mail-box bg-slate-50 border rounded p-3 text-xs max-h-48 overflow-auto">${m.body}</pre>
-            </div>
-          </div>`;
-      }).join('');
+      mail += `DETAILED PENDING TICKETS (${ispLabel}) - Sorted by Aging\n`;
+      mail += `${'='.repeat(120)}\n\n`;
+
+      tickets.forEach((r, i) => {
+        mail += `${i+1}. Incident ID   : ${r._incident || 'N/A'}\n`;
+        mail += `   Site Code     : ${r._site || 'N/A'}\n`;
+        mail += `   State         : ${r._state || 'N/A'}\n`;
+        mail += `   Submitted     : ${r._submitted || 'N/A'}\n`;
+        mail += `   Status        : ${r._statusRaw || r._status}\n`;
+        mail += `   Owner         : ${r._owner}\n`;
+        mail += `   Down Time Aging: ${r._agingRaw || formatAging(r._agingHrs)}\n`;
+        mail += `   ETR           : ${r._etr || 'N/A'}\n`;
+        mail += `   Branch Person : ${r._branchName || 'N/A'} | ${r._branchContact || ''} | Alt: ${r._alternate || ''}\n`;
+        mail += `   Category      : ${r._category}\n`;
+        mail += `   Remarks       : ${r._remarks || 'N/A'}\n`;
+        mail += `\n`;
+      });
+
+      mail += `\nKindly take necessary action on priority and update the portal.\n\nThanks & Regards\nNOC / Operations Team`;
+
+      document.getElementById('ispMailTitle').textContent = `${ispLabel} Escalation Mail (${tickets.length} open tickets)`;
+      document.getElementById('ispMailContent').textContent = mail;
+      document.getElementById('ispMailBox').classList.remove('hidden');
+      document.getElementById('ispMailBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function copyText(id) {
-      const el = document.getElementById(id);
-      navigator.clipboard.writeText(el.textContent || el.innerText).then(() => {
-        alert('Copied to clipboard!');
+    function copyIspMail() {
+      const text = document.getElementById('ispMailContent').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('Full mail copied! Ab Outlook / Gmail me paste kar lo.')).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        alert('Copied!');
       });
     }
-
-    function copyMail(id) {
-      const sub = document.getElementById(id + '-subject').textContent;
-      const body = document.getElementById(id + '-body').textContent;
-      navigator.clipboard.writeText('Subject: ' + sub + '\n\n' + body).then(() => {
-        alert('Full mail (Subject + Body) copied!');
-      });
-    }
-
-    function copyCombinedMail() {
-      copyText('combinedMailContent');
-    }
-
-    // Auto load sample on first visit for demo
-    window.addEventListener('DOMContentLoaded', () => {
-      // optional: loadSample();  // uncomment if you want sample always
-    });
   </script>
 </body>
 </html>

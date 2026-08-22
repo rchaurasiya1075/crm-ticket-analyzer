@@ -1,44 +1,32 @@
-# CRM Ticket Analyzer
+# CRM Ticket Analyzer v2
 
-Excel jaisa web tool for CRM ticket analysis + Escalation mail generator.
+Celerity / HCI Escalation Mail Generator + Analysis Dashboard
 
-## Features
+## New in v2 (matching your mail format)
 
-- **Paste Excel data** (Ctrl+C from Excel → Ctrl+V) or upload `.xlsx` / `.csv`
-- Auto column detection (Owner, Assign time, Comment, State, Resolved/Close, Caller...)
-- **Dashboard**: Total / Open / Hold / Resolved, total & average downtime
-- **Location (State) wise** open tickets + total downtime hours
-- **Category / Reason** auto detection from remarks:
-  - Pending FE Assignment
-  - Awaiting Hughes / Customer Confirmation
-  - Link Up – Pending Confirmation
-  - Power / Fiber / Equipment issues
-  - Other
-- **Open tickets table** with Severity (Critical >24h, High 8-24h, Medium 4-8h, Low <4h)
-- **Escalation Mail Formats** ready to copy-paste:
-  - Individual mail per open ticket
-  - Combined summary mail for all open tickets
-- Resolved tickets analysis (average resolution time)
-- 100% client-side – data browser me hi rehta hai, server pe nahi jata
+- **Separate mails for Celerity and HCI**
+- Exact style: Dear Support + Outage Reason summary + Location summary + Detailed tickets list
+- Supports your columns:
+  - Incident ID, Site Code, State, Submitted Time, CurrentStatus, Owner
+  - Remarks, Branch Person Name, Contact, Alternate Number
+  - **Down Time Aging**, ETR
+- One Site Code → multiple Incident IDs supported
+- Open / Resolve / Overall Excel alag-alag paste / upload kar sakte ho
+- Auto category from remarks (Fiber Cut, Team Checking, Link up confirmation, Vendor change/NOC, etc.)
 
 ## How to use
 
-1. Excel se data select karke **Copy**
-2. Site pe paste box me **Paste** → **Parse Pasted Data**
-3. Ya file upload karo
-4. Dashboard + Table + Escalation mails auto ban jayenge
-5. Severity ke hisab se Critical tickets pehle escalate karo
+1. Open call Excel se data copy karke paste karo **ya** file upload
+2. Dashboard me State / Reason / ISP wise summary dekh lo
+3. **Generate Celerity Mail** ya **Generate HCI Mail** dabao
+4. Copy Full Mail → Outlook me paste
 
-## GitHub Pages pe host
+## Live Site
 
-1. Is repo ko fork / clone karo
-2. Settings → Pages → Source: Deploy from branch `main` / root
-3. 1-2 minute me site live ho jayegi: `https://<username>.github.io/crm-ticket-analyzer/`
+After enabling GitHub Pages:
 
-## Local test
+https://rchaurasiya1075.github.io/crm-ticket-analyzer/
 
-Sirf `index.html` browser me open karo (file:// se bhi chalega, lekin clipboard ke liye modern browser better).
+## Enable GitHub Pages
 
----
-
-Made for Xtranet / FE Rollout Partner ticket tracking.
+Repo → Settings → Pages → Source: Deploy from a branch → `main` / root → Save
