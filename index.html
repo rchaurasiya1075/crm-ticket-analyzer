@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Ticket Analyzer | Excel-like Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, sans-serif; }
+    .table-container { max-height: 480px; overflow: auto; }
+    table th { position: sticky; top: 0; z-index: 10; }
+    .mail-box { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; }
+    .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+    .open { background: #fef3c7; color: #92400e; }
+    .resolved { background: #d1fae5; color: #065f46; }
+    .hold { background: #fee2e2; color: #991b1b; }
+    .critical { background: #fecaca; color: #7f1d1d; }
+    .high { background: #fed7aa; color: #9a3412; }
+    .medium { background: #fef08a; color: #854d0e; }
+    .low { background: #bbf7d0; color: #166534; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="bg-blue-700 text-white shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">CRM Ticket Analyzer</h1>
+          <p class="text-blue-100 text-sm">Excel-like paste → Auto Analysis + Escalation Mails</p>
+        </div>
+        <div class="flex gap-2 text-sm">
+          <span id="ticketCount" class="bg-blue-600 px-3 py-1 rounded-full">0 tickets</span>
+          <span id="openCount" class="bg-amber-500 px-3 py-1 rounded-full">0 open</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+      <!-- PASTE / UPLOAD SECTION -->
+      <section class="bg-white rounded-xl shadow p-5">
+        <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">1</span>
+          Data Import (Excel se copy-paste ya file upload)
+        </h2>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Excel se select karke Ctrl+C → yahan Ctrl+V</label>
+            <textarea id="pasteArea" rows="6" class="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Yahan Excel data paste karo (headers + rows)...&#10;&#10;Owner	Assign to FE Time-Active	Last Enclosure Comment...&#10;ONEOTT - FE...	2026-08-22 11:06:34	Assign to FE..."></textarea>
+            <div class="mt-2 flex gap-2">
+              <button onclick="parsePaste()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Parse Pasted Data</button>
+              <button onclick="loadSample()" class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm">Load Sample Data</button>
+              <button onclick="clearAll()" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">Clear</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Ya .xlsx / .csv file upload karo</label>
+            <div class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
+              <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFile(event)" />
+              <button onclick="document.getElementById('fileInput').click()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-medium">Choose Excel/CSV File</button>
+              <p class="text-xs text-slate-500 mt-2">SheetJS se parse hoga. Pehli sheet use hogi.</p>
+            </div>
+            <div id="parseStatus" class="mt-3 text-sm text-slate-600"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DASHBOARD SUMMARY -->
+      <section id="dashboard" class="bg-white rounded-xl shadow p-5 hidden">
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">2</span>
+          Dashboard & Analysis
+        </h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="summaryCards"></div>
+
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h3 class="font-medium mb-2">Location / State wise Open Tickets</h3>
+            <div id="stateSummary" class="space-y-2 text-sm"></div>
+          </div>
+          <div>
+            <h3 class="font-medium mb-2">Category / Reason wise (Open)</h3>
+            <div id="categorySummary" class="space-y-2 text-sm"></div>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <h3 class="font-medium mb-2">Resolved Tickets Analysis</h3>
+          <div id="resolvedAnalysis" class="text-sm bg-slate-50 rounded-lg p-4"></div>
+        </div>
+      </section>
+
+      <!-- FILTERS + TABLE -->
+      <section id="tableSection" class="bg-white rounded-xl shadow p-5 hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">3</span>
+            Tickets Table
+          </h2>
+          <div class="flex flex-wrap gap-2">
+            <select id="filterStatus" onchange="renderTable()" class="border rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">All Status</option>
+              <option value="open">Open only</option>
+              <option value="resolved">Resolved only</option>
+              <option value="hold">On Hold</option>
+            </select>
+            <select id="filterState" onchange="renderTable()" class="border rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">All States</option>
+            </select>
+            <input type="text" id="searchBox" oninput="renderTable()" placeholder="Search site / caller / remark..." class="border rounded-lg px-3 py-1.5 text-sm w-56" />
+          </div>
+        </div>
+        <div class="table-container border rounded-lg">
+          <table class="min-w-full text-sm" id="dataTable">
+            <thead class="bg-slate-100"></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ESCALATION MAILS -->
+      <section id="mailSection" class="bg-white rounded-xl shadow p-5 hidden">
+        <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="bg-blue-100 text-blue-700 w-7 h-7 rounded-full flex items-center justify-center text-sm">4</span>
+          Open Tickets – Escalation Mail Formats (Copy-Paste ready)
+        </h2>
+        <p class="text-sm text-slate-600 mb-4">Downtime ke hisab se severity set hoti hai. Har ticket ka individual mail + Combined mail dono available hain.</p>
+        
+        <div class="mb-4 flex gap-2">
+          <button onclick="generateMails()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Generate / Refresh Mails</button>
+          <button onclick="copyCombinedMail()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Copy Combined Escalation Mail</button>
+        </div>
+
+        <div id="combinedMailBox" class="hidden mb-6">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-sm">Combined Escalation Mail (All Open)</span>
+            <button onclick="copyText('combinedMailContent')" class="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded">Copy</button>
+          </div>
+          <div id="combinedMailContent" class="mail-box bg-slate-50 border rounded-lg p-4 max-h-64 overflow-auto"></div>
+        </div>
+
+        <div id="individualMails" class="space-y-4"></div>
+      </section>
+
+      <!-- FOOTER HELP -->
+      <section class="text-center text-sm text-slate-500 pb-8">
+        <p>Data browser me hi rehta hai – server pe nahi jata. GitHub Pages pe host safe hai.</p>
+        <p class="mt-1">Columns auto-detect: Owner, Assign/Open Time, Comment/Remark, State, Hold, Resolved/Close, Caller, etc.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ========== GLOBAL STATE ==========
+    let rawData = [];      // array of objects
+    let headers = [];
+    let colMap = {};       // logical name → actual header
+
+    // Sample data from previous conversation
+    const SAMPLE_TSV = `Owner	Assign to FE Time-Active	Last Enclosure Comment(Active)	State	Call on Hold Time(Active)	SubmittedBy	Last Modified Time	Resolved Time-Active	Close Time(Active)	ETA	FF-ETA	Caller Name
+ONEOTT - FE Rollout Partner	2026-08-22 11:06:34	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061225	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:06	--	--	--	--	9068969829
+ONEOTT - FE Rollout Partner	2026-08-22 11:06:02	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061223	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:06	--	--	--	--	8267097765
+ONEOTT - FE Rollout Partner	2026-08-22 11:04:14	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061224	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:04	--	--	--	--	8937057115
+ONEOTT - FE Rollout Partner	2026-08-22 11:03:03	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061217	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:03	--	--	--	--	7464830619
+ONEOTT - FE Rollout Partner	2026-08-22 11:01:40	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-TEH-XX-XXX-HUGHES-0061214	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-22 11:01	--	--	--	--	9897933954
+HCIN - FE Rollout Partner	2026-08-21 12:33:55	Call on Hold_Enclosure :: Dear Customer, Link is up from our end and we are awaiting confirmation from the Hughes team.	Punjab	2026-08-21 17:07:09	XTRANET TECHNOLOGIES LIMITED	2026-08-21 17:07	--	--	2026-08-21 17:07	--	8699149299
+ONEOTT - FE Rollout Partner	2026-08-21 12:33:19	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-UDH-XX-XXX-HUGHES-0066084	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-21 12:33	--	--	--	--	8191899824
+ONEOTT - FE Rollout Partner	2026-08-21 12:05:55	Assign to FE_Enclosure :: CKT ID :ENT-BBXX-BWXX-UK-RUD-XX-XXX-HUGHES-0061238	Uttarakhand	--	XTRANET TECHNOLOGIES LIMITED	2026-08-21 12:06	--	--	--	--	8954770707`;
+
+    // ========== HELPERS ==========
+    function parseDate(str) {
+      if (!str || str === '--' || str.trim() === '') return null;
+      // Try common formats
+      let d = new Date(str.replace(/(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})/, '$1T$2:$3:00'));
+      if (isNaN(d.getTime())) d = new Date(str);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function hoursBetween(start, end) {
+      if (!start || !end) return null;
+      return (end - start) / (1000 * 60 * 60);
+    }
+
+    function formatDuration(hours) {
+      if (hours === null || isNaN(hours)) return 'N/A';
+      if (hours < 1) return Math.round(hours * 60) + ' mins';
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      return h + 'h ' + m + 'm';
+    }
+
+    function detectColumns(hdrs) {
+      const map = {};
+      const lower = hdrs.map(h => (h || '').toLowerCase().trim());
+      const find = (...keys) => {
+        for (let k of keys) {
+          const i = lower.findIndex(h => h.includes(k));
+          if (i >= 0) return hdrs[i];
+        }
+        return null;
+      };
+      map.owner = find('owner');
+      map.assign = find('assign to fe', 'assign', 'open time', 'created', 'submit time');
+      map.comment = find('enclosure comment', 'comment', 'remark', 'last enclosure', 'description');
+      map.state = find('state', 'location', 'region');
+      map.hold = find('hold time', 'call on hold');
+      map.submitted = find('submittedby', 'submitted by', 'created by');
+      map.modified = find('last modified', 'modified');
+      map.resolved = find('resolved time', 'resolved');
+      map.close = find('close time', 'closed');
+      map.eta = find('eta');
+      map.caller = find('caller', 'mobile', 'phone', 'contact');
+      map.ckt = null; // will extract from comment
+      return map;
+    }
+
+    function extractCKT(comment) {
+      if (!comment) return 'N/A';
+      const m = comment.match(/CKT\s*ID\s*[:\s]*([A-Z0-9\-]+)/i) || comment.match(/(ENT-[A-Z0-9\-]+)/i);
+      return m ? m[1] : 'N/A';
+    }
+
+    function categorize(comment) {
+      if (!comment) return 'Unknown';
+      const c = comment.toLowerCase();
+      if (c.includes('awaiting confirmation') || c.includes('awaiting') && c.includes('hughes')) return 'Awaiting Hughes / Customer Confirmation';
+      if (c.includes('link is up')) return 'Link Up – Pending Confirmation';
+      if (c.includes('assign to fe') || c.includes('assign to fe_enclosure')) return 'Pending FE Assignment / Rollout';
+      if (c.includes('call on hold')) return 'On Hold – Awaiting Action';
+      if (c.includes('power') || c.includes('electricity')) return 'Power Issue';
+      if (c.includes('fiber') || c.includes('cable cut') || c.includes('ofc')) return 'Fiber / Cable Issue';
+      if (c.includes('equipment') || c.includes('hardware') || c.includes('modem') || c.includes('router')) return 'Equipment Fault';
+      return 'Other / Manual Review';
+    }
+
+    function getStatus(row) {
+      const resolved = (row._resolved || row._close || '').toString().trim();
+      const hold = (row._hold || '').toString().trim();
+      if (resolved && resolved !== '--') return 'resolved';
+      if (hold && hold !== '--') return 'hold';
+      return 'open';
+    }
+
+    function getSeverity(hours) {
+      if (hours === null) return { level: 'Unknown', cls: 'low' };
+      if (hours >= 24) return { level: 'Critical (>24h)', cls: 'critical' };
+      if (hours >= 8)  return { level: 'High (8-24h)', cls: 'high' };
+      if (hours >= 4)  return { level: 'Medium (4-8h)', cls: 'medium' };
+      return { level: 'Low (<4h)', cls: 'low' };
+    }
+
+    // ========== PARSE ==========
+    function processRows(hdrs, rows) {
+      headers = hdrs;
+      colMap = detectColumns(hdrs);
+      rawData = rows.map((r, idx) => {
+        const obj = {};
+        hdrs.forEach((h, i) => obj[h] = (r[i] || '').toString().trim());
+        // normalized helpers
+        obj._owner = obj[colMap.owner] || '';
+        obj._assign = obj[colMap.assign] || '';
+        obj._comment = obj[colMap.comment] || '';
+        obj._state = obj[colMap.state] || '';
+        obj._hold = obj[colMap.hold] || '';
+        obj._resolved = obj[colMap.resolved] || '';
+        obj._close = obj[colMap.close] || '';
+        obj._caller = obj[colMap.caller] || '';
+        obj._ckt = extractCKT(obj._comment);
+        obj._category = categorize(obj._comment);
+        obj._status = getStatus(obj);
+        obj._openDate = parseDate(obj._assign) || parseDate(obj[colMap.modified]);
+        obj._closeDate = parseDate(obj._resolved) || parseDate(obj._close);
+        obj._holdDate = parseDate(obj._hold);
+        // downtime for open
+        const now = new Date();
+        if (obj._status !== 'resolved' && obj._openDate) {
+          obj._downtimeHrs = hoursBetween(obj._openDate, now);
+        } else if (obj._status === 'resolved' && obj._openDate && obj._closeDate) {
+          obj._downtimeHrs = hoursBetween(obj._openDate, obj._closeDate);
+        } else {
+          obj._downtimeHrs = null;
+        }
+        obj._id = idx;
+        return obj;
+      });
+      updateUI();
+    }
+
+    function parsePaste() {
+      const text = document.getElementById('pasteArea').value.trim();
+      if (!text) { alert('Pehle data paste karo'); return; }
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { alert('Header + kam se kam 1 row chahiye'); return; }
+      const hdrs = lines[0].split('\t').map(h => h.trim());
+      const rows = lines.slice(1).map(l => l.split('\t'));
+      processRows(hdrs, rows);
+      document.getElementById('parseStatus').innerHTML = `<span class="text-green-600">✓ ${rawData.length} tickets loaded from paste</span>`;
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+          if (json.length < 2) { alert('Empty or invalid file'); return; }
+          const hdrs = json[0].map(h => (h || '').toString().trim());
+          const rows = json.slice(1);
+          processRows(hdrs, rows);
+          document.getElementById('parseStatus').innerHTML = `<span class="text-green-600">✓ ${rawData.length} tickets loaded from file: ${file.name}</span>`;
+        } catch (err) {
+          alert('File parse error: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function loadSample() {
+      document.getElementById('pasteArea').value = SAMPLE_TSV;
+      parsePaste();
+    }
+
+    function clearAll() {
+      rawData = [];
+      document.getElementById('pasteArea').value = '';
+      document.getElementById('parseStatus').innerHTML = '';
+      document.getElementById('dashboard').classList.add('hidden');
+      document.getElementById('tableSection').classList.add('hidden');
+      document.getElementById('mailSection').classList.add('hidden');
+      document.getElementById('ticketCount').textContent = '0 tickets';
+      document.getElementById('openCount').textContent = '0 open';
+    }
+
+    // ========== UI UPDATE ==========
+    function updateUI() {
+      const open = rawData.filter(r => r._status !== 'resolved');
+      document.getElementById('ticketCount').textContent = rawData.length + ' tickets';
+      document.getElementById('openCount').textContent = open.length + ' open';
+
+      // show sections
+      document.getElementById('dashboard').classList.remove('hidden');
+      document.getElementById('tableSection').classList.remove('hidden');
+      document.getElementById('mailSection').classList.remove('hidden');
+
+      // populate state filter
+      const states = [...new Set(rawData.map(r => r._state).filter(Boolean))].sort();
+      const sel = document.getElementById('filterState');
+      sel.innerHTML = '<option value="all">All States</option>' + states.map(s => `<option value="${s}">${s}</option>`).join('');
+
+      renderSummary();
+      renderTable();
+      generateMails();
+    }
+
+    function renderSummary() {
+      const open = rawData.filter(r => r._status !== 'resolved');
+      const resolved = rawData.filter(r => r._status === 'resolved');
+      const hold = rawData.filter(r => r._status === 'hold');
+
+      // cards
+      const totalDT = open.reduce((s, r) => s + (r._downtimeHrs || 0), 0);
+      const cards = [
+        { label: 'Total Tickets', value: rawData.length, color: 'bg-blue-50 text-blue-800' },
+        { label: 'Open / Active', value: open.length, color: 'bg-amber-50 text-amber-800' },
+        { label: 'On Hold', value: hold.length, color: 'bg-red-50 text-red-800' },
+        { label: 'Resolved', value: resolved.length, color: 'bg-emerald-50 text-emerald-800' },
+        { label: 'Open Downtime (hrs)', value: totalDT.toFixed(1), color: 'bg-purple-50 text-purple-800' },
+        { label: 'Avg Open DT', value: open.length ? (totalDT / open.length).toFixed(1) + 'h' : '0', color: 'bg-indigo-50 text-indigo-800' },
+      ];
+      document.getElementById('summaryCards').innerHTML = cards.map(c => `
+        <div class="${c.color} rounded-xl p-4 text-center">
+          <div class="text-2xl font-bold">${c.value}</div>
+          <div class="text-xs mt-1">${c.label}</div>
+        </div>`).join('');
+
+      // state wise open
+      const stateMap = {};
+      open.forEach(r => {
+        const s = r._state || 'Unknown';
+        if (!stateMap[s]) stateMap[s] = { count: 0, hrs: 0 };
+        stateMap[s].count++;
+        stateMap[s].hrs += (r._downtimeHrs || 0);
+      });
+      document.getElementById('stateSummary').innerHTML = Object.entries(stateMap)
+        .sort((a,b) => b[1].hrs - a[1].hrs)
+        .map(([st, v]) => `
+          <div class="flex justify-between items-center bg-slate-50 rounded px-3 py-2">
+            <span class="font-medium">${st}</span>
+            <span>${v.count} open • ${v.hrs.toFixed(1)} hrs total</span>
+          </div>`).join('') || '<p class="text-slate-500">No open tickets</p>';
+
+      // category wise
+      const catMap = {};
+      open.forEach(r => {
+        const c = r._category;
+        if (!catMap[c]) catMap[c] = 0;
+        catMap[c]++;
+      });
+      document.getElementById('categorySummary').innerHTML = Object.entries(catMap)
+        .sort((a,b) => b[1] - a[1])
+        .map(([cat, cnt]) => `
+          <div class="flex justify-between items-center bg-slate-50 rounded px-3 py-2">
+            <span>${cat}</span>
+            <span class="font-semibold">${cnt}</span>
+          </div>`).join('') || '<p class="text-slate-500">No open tickets</p>';
+
+      // resolved analysis
+      if (resolved.length === 0) {
+        document.getElementById('resolvedAnalysis').innerHTML = '<p class="text-slate-500">Abhi koi resolved ticket nahi hai is data me. Closed tickets paste karoge to average resolution time, reason breakdown etc. dikhega.</p>';
+      } else {
+        const resHrs = resolved.map(r => r._downtimeHrs).filter(h => h !== null);
+        const avg = resHrs.length ? (resHrs.reduce((a,b)=>a+b,0) / resHrs.length) : 0;
+        const max = resHrs.length ? Math.max(...resHrs) : 0;
+        document.getElementById('resolvedAnalysis').innerHTML = `
+          <p><strong>${resolved.length}</strong> resolved tickets</p>
+          <p>Average resolution time: <strong>${formatDuration(avg)}</strong></p>
+          <p>Longest resolution: <strong>${formatDuration(max)}</strong></p>
+          <p class="mt-2 text-xs text-slate-500">Note: Resolution time = Close/Resolved − Assign/Open time</p>`;
+      }
+    }
+
+    function renderTable() {
+      const statusF = document.getElementById('filterStatus').value;
+      const stateF = document.getElementById('filterState').value;
+      const search = document.getElementById('searchBox').value.toLowerCase();
+
+      let filtered = rawData.filter(r => {
+        if (statusF === 'open' && r._status === 'resolved') return false;
+        if (statusF === 'resolved' && r._status !== 'resolved') return false;
+        if (statusF === 'hold' && r._status !== 'hold') return false;
+        if (stateF !== 'all' && r._state !== stateF) return false;
+        if (search) {
+          const blob = (r._ckt + ' ' + r._comment + ' ' + r._caller + ' ' + r._owner + ' ' + r._state).toLowerCase();
+          if (!blob.includes(search)) return false;
+        }
+        return true;
+      });
+
+      // sort open first by downtime desc
+      filtered.sort((a, b) => {
+        if (a._status === 'resolved' && b._status !== 'resolved') return 1;
+        if (b._status === 'resolved' && a._status !== 'resolved') return -1;
+        return (b._downtimeHrs || 0) - (a._downtimeHrs || 0);
+      });
+
+      const thead = document.querySelector('#dataTable thead');
+      const tbody = document.querySelector('#dataTable tbody');
+
+      thead.innerHTML = `<tr class="text-left">
+        <th class="px-3 py-2 border-b">Status</th>
+        <th class="px-3 py-2 border-b">CKT / Site</th>
+        <th class="px-3 py-2 border-b">State</th>
+        <th class="px-3 py-2 border-b">Downtime</th>
+        <th class="px-3 py-2 border-b">Severity</th>
+        <th class="px-3 py-2 border-b">Category</th>
+        <th class="px-3 py-2 border-b">Owner</th>
+        <th class="px-3 py-2 border-b">Caller</th>
+        <th class="px-3 py-2 border-b">Remark (short)</th>
+      </tr>`;
+
+      tbody.innerHTML = filtered.map(r => {
+        const sev = getSeverity(r._downtimeHrs);
+        const statusCls = r._status === 'resolved' ? 'resolved' : (r._status === 'hold' ? 'hold' : 'open');
+        const shortRemark = (r._comment || '').substring(0, 80) + ((r._comment || '').length > 80 ? '...' : '');
+        return `<tr class="hover:bg-slate-50 border-b">
+          <td class="px-3 py-2"><span class="badge ${statusCls}">${r._status}</span></td>
+          <td class="px-3 py-2 font-mono text-xs">${r._ckt}</td>
+          <td class="px-3 py-2">${r._state || '-'}</td>
+          <td class="px-3 py-2 font-medium">${formatDuration(r._downtimeHrs)}</td>
+          <td class="px-3 py-2"><span class="badge ${sev.cls}">${sev.level}</span></td>
+          <td class="px-3 py-2 text-xs">${r._category}</td>
+          <td class="px-3 py-2 text-xs">${(r._owner || '').substring(0, 25)}</td>
+          <td class="px-3 py-2">${r._caller || '-'}</td>
+          <td class="px-3 py-2 text-xs text-slate-600" title="${r._comment}">${shortRemark}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-500">No matching tickets</td></tr>';
+    }
+
+    // ========== MAILS ==========
+    function buildSingleMail(r) {
+      const sev = getSeverity(r._downtimeHrs);
+      const dt = formatDuration(r._downtimeHrs);
+      const subject = `ESCALATION | ${r._ckt} | ${r._state || 'N/A'} | Downtime ${dt} | ${sev.level}`;
+      const body = `Dear Team,
+
+Please find below open ticket requiring your immediate attention / prioritization:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Site / CKT ID     : ${r._ckt}
+Location / State  : ${r._state || 'N/A'}
+Current Status    : ${r._status.toUpperCase()}
+Downtime so far   : ${dt}
+Severity          : ${sev.level}
+Category / Reason : ${r._category}
+Owner / Partner   : ${r._owner || 'N/A'}
+Caller Number     : ${r._caller || 'N/A'}
+Assign / Open Time: ${r._assign || 'N/A'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Latest Remark:
+${r._comment || 'No remark available'}
+
+Action Required:
+- Kindly check current status of the link / work.
+- Update the ticket with latest progress.
+- If pending on Hughes / Customer / FE, please escalate internally as needed.
+
+Thanks & Regards
+NOC / Operations Team`;
+      return { subject, body, severity: sev, ticket: r };
+    }
+
+    function generateMails() {
+      const open = rawData.filter(r => r._status !== 'resolved')
+        .sort((a, b) => (b._downtimeHrs || 0) - (a._downtimeHrs || 0));
+
+      const container = document.getElementById('individualMails');
+      if (open.length === 0) {
+        container.innerHTML = '<p class="text-slate-500">Koi open ticket nahi hai.</p>';
+        document.getElementById('combinedMailBox').classList.add('hidden');
+        return;
+      }
+
+      // Combined
+      let combined = `Subject: ESCALATION – ${open.length} Open Tickets | Total Open Downtime Review
+
+Dear Team,
+
+Please find below summary of currently open tickets requiring attention (sorted by downtime):
+
+`;
+      open.forEach((r, i) => {
+        const sev = getSeverity(r._downtimeHrs);
+        combined += `${i + 1}. ${r._ckt} | ${r._state || 'N/A'} | ${formatDuration(r._downtimeHrs)} | ${sev.level}
+   Category: ${r._category}
+   Remark  : ${(r._comment || '').substring(0, 100)}...
+   Caller  : ${r._caller || 'N/A'}
+   Owner   : ${r._owner || 'N/A'}
+
+`;
+      });
+      combined += `\nKindly prioritize Critical & High severity tickets first and update status.\n\nThanks & Regards\nNOC / Operations Team`;
+
+      document.getElementById('combinedMailContent').textContent = combined;
+      document.getElementById('combinedMailBox').classList.remove('hidden');
+
+      // Individual
+      container.innerHTML = open.map((r, idx) => {
+        const m = buildSingleMail(r);
+        const id = 'mail-' + idx;
+        return `
+          <div class="border rounded-xl overflow-hidden">
+            <div class="bg-slate-100 px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="badge ${m.severity.cls}">${m.severity.level}</span>
+                <span class="font-mono text-sm font-medium">${r._ckt}</span>
+                <span class="text-xs text-slate-500">${r._state} • ${formatDuration(r._downtimeHrs)}</span>
+              </div>
+              <button onclick="copyMail('${id}')" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Copy Mail</button>
+            </div>
+            <div class="p-4">
+              <div class="text-xs font-medium text-slate-500 mb-1">Subject:</div>
+              <div class="text-sm font-medium mb-3" id="${id}-subject">${m.subject}</div>
+              <div class="text-xs font-medium text-slate-500 mb-1">Body:</div>
+              <pre id="${id}-body" class="mail-box bg-slate-50 border rounded p-3 text-xs max-h-48 overflow-auto">${m.body}</pre>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function copyText(id) {
+      const el = document.getElementById(id);
+      navigator.clipboard.writeText(el.textContent || el.innerText).then(() => {
+        alert('Copied to clipboard!');
+      });
+    }
+
+    function copyMail(id) {
+      const sub = document.getElementById(id + '-subject').textContent;
+      const body = document.getElementById(id + '-body').textContent;
+      navigator.clipboard.writeText('Subject: ' + sub + '\n\n' + body).then(() => {
+        alert('Full mail (Subject + Body) copied!');
+      });
+    }
+
+    function copyCombinedMail() {
+      copyText('combinedMailContent');
+    }
+
+    // Auto load sample on first visit for demo
+    window.addEventListener('DOMContentLoaded', () => {
+      // optional: loadSample();  // uncomment if you want sample always
+    });
+  </script>
+</body>
+</html>
